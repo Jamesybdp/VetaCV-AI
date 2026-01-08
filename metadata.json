@@ -1,0 +1,7 @@
+{
+  "name": "VetaCV AI™",
+  "description": "The AI-powered CV vetting engine for Zim/SADC job seekers. Sculpting raw resumes into job-winning masterpieces.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
