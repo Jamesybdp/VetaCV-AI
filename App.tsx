@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AppStep, CareerGoals, OptimizationResult, ChatMessage, JobApplication } from './types';
 import { GeminiService } from './services/geminiService';
+import { RefinementService, RefinementResult } from './services/refinementService';
+import { RefinementChat } from './components/RefinementChat';
 import { sanitizeHtmlForPdf, debugHtmlStructure, SanitizationResult } from './utils/htmlSanitizer';
 import { validateCVData } from './utils/dataValidator';
 import { injectContactData, ContactData } from './utils/dataInjector';
@@ -32,7 +34,7 @@ const PDFHealthDashboard: React.FC<{
 }> = ({ health, errors, recentExports, onClear }) => (
   <div style={{
     position: 'fixed',
-    bottom: 20,
+    bottom: 120,
     right: 20,
     background: 'white',
     border: '1px solid #ddd',
@@ -241,18 +243,17 @@ const App: React.FC = () => {
     recipientContext: ''
   });
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<"1K" | "2K" | "4K">("1K");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showBrandingInCV, setShowBrandingInCV] = useState(true);
   const [showDigitalBadge, setShowDigitalBadge] = useState(true);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showToS, setShowToS] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sanitizationResult, setSanitizationResult] = useState<SanitizationResult | null>(null);
   
   // New States for Features
@@ -300,7 +301,6 @@ const App: React.FC = () => {
           setHistory([parsed.optimization]);
           setHistoryIndex(0);
         }
-        if (parsed.chatMessages) setChatMessages(parsed.chatMessages);
         if (parsed.agreedToTerms) setAgreedToTerms(parsed.agreedToTerms);
         if (parsed.jobApplications) setJobApplications(parsed.jobApplications);
         showToast("Session restored. Welcome back!");
@@ -320,14 +320,13 @@ const App: React.FC = () => {
         rawCV,
         goals,
         optimization,
-        chatMessages,
         agreedToTerms,
         jobApplications
       };
       localStorage.setItem('veta_state', JSON.stringify(stateToSave));
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [step, rawCV, goals, optimization, chatMessages, agreedToTerms, jobApplications, isInitialLoad]);
+  }, [step, rawCV, goals, optimization, agreedToTerms, jobApplications, isInitialLoad]);
 
   // Undo/Redo Logic
   const addToHistory = (newState: OptimizationResult) => {
@@ -470,7 +469,7 @@ const App: React.FC = () => {
 
   const handlePDFFallback = async (cvData: OptimizationResult) => {
     const choice = window.confirm(
-      'PDF quality check failed. The file may look corrupted.\n\n' +
+      'PDF export failed or file is corrupted.\n\n' +
       'Click OK to download a TEXT backup (Recommended).\n' +
       'Click Cancel to try a basic WORD export.'
     );
@@ -501,7 +500,6 @@ const App: React.FC = () => {
     setRawCV('');
     setGoals({ targetRole: '', industry: '', locationPreference: '', moveType: 'vertical', jobDescription: '', recipientContext: '' });
     setOptimization(null);
-    setChatMessages([]);
     setError(null);
     setShowDataForm(false);
     setPdfErrors([]);
@@ -702,7 +700,7 @@ const App: React.FC = () => {
       showToast("Rendering High-Fidelity PDF...");
       
       const opt = {
-        margin: [15, 15, 15, 15],
+        margin: [10, 10, 10, 10], // Slightly reduced margin to fit content better
         filename: `Vetted_by_VetaCV_AI_${goals.targetRole.replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { 
@@ -720,8 +718,13 @@ const App: React.FC = () => {
             clonedDoc.body.style.whiteSpace = 'normal';
           }
         },
+        // Updated to use 'smart' page breaking if available or legacy CSS mode
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true, hotfixes: ['px_scaling'] },
-        pagebreak: { mode: ['css', 'avoid-all'], avoid: ['li', 'p', 'h2', 'h3', 'ul', 'ol'] }
+        pagebreak: { 
+          mode: ['css', 'legacy'], // Legacy mode often handles complex layouts better than avoid-all
+          before: '.page-break',
+          avoid: ['h1', 'h2', 'h3', 'li', 'table', '.keep-together'] 
+        }
       };
 
       await html2pdf().set(opt).from(element).save();
@@ -729,7 +732,7 @@ const App: React.FC = () => {
       logExport(true, result.fixesApplied, result.warnings);
     } catch (e: any) {
       console.error(e);
-      showToast("PDF Generation Failed. Try fallback options.", "error");
+      showToast("PDF Generation Failed. Initiating fallback...", "error");
       await handlePDFFallback(optimization);
       logExport(false, result.fixesApplied, [e.message]);
     } finally {
@@ -739,24 +742,24 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChatSend = async (msg: string) => {
-    if (!optimization || !msg.trim() || isLoading) return;
-    setChatMessages(prev => [...prev, { role: 'user', content: msg, timestamp: Date.now() }]);
-    setIsLoading(true);
-    try {
-      const response = await gemini.chatRefinement([], msg, optimization);
-      setChatMessages(prev => [...prev, { role: 'assistant', content: response, timestamp: Date.now() }]);
-      
-      // Update optimization if the response implies a CV change (simplified logic)
-      // In a real app, the refinement would return structured data to update specific parts.
-      // For now, we assume the user might manually edit based on chat, or we need a specific "apply change" flow.
-      // But we CAN add a generic history point if we assume the AI *could* return a new HTML version.
-      // For this demo, let's just leave history for manual edits or full re-optimizations.
-    } catch (err: any) {
-      showToast("Refinement offline.", 'error');
-    } finally {
-      setIsLoading(false);
-    }
+  // Handler for when refinement completes from the chat bubble
+  const handleRefinementComplete = (result: RefinementResult) => {
+    if (!optimization) return;
+    
+    // Update state with refined CV
+    const newState = {
+      ...optimization,
+      humanVersion: result.humanVersion,
+      // Update summary if changed, using the digitalSummary field which usually maps to LinkedIn summary or profile
+      digitalSync: {
+        ...optimization.digitalSync,
+        linkedinSummary: result.digitalSummary 
+      }
+    };
+    
+    setOptimization(newState);
+    addToHistory(newState);
+    showToast("Refinement Applied Successfully!");
   };
 
   const recipientSuggestions = ["Econet", "Delta Beverages", "Zimworx", "Old Mutual", "Cassava", "RemoteGlobal"];
@@ -933,12 +936,11 @@ const App: React.FC = () => {
             </p>
             <button onClick={handleStart} className="bg-slate-900 hover:bg-black text-white font-black py-6 px-20 rounded-[3rem] shadow-2xl hover:-translate-y-2 transition-all active:scale-95 flex items-center justify-center gap-4 mx-auto text-xl group">
               Start Vetting
-              <svg className="h-6 w-6 transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+              <svg className="h-6 w-6 transform group-hover:translate-x-1" fill="none" viewBox="0 0 0 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
           </div>
         )}
 
-        {/* ... [Rest of the Steps: UPLOAD_CV, TARGET_ROLE, ANALYZING stay the same] ... */}
         {step === AppStep.UPLOAD_CV && (
           <div className="max-w-5xl mx-auto glass-panel rounded-[4rem] shadow-elite overflow-hidden animate-in slide-in-from-bottom-12 duration-700">
              <div className="p-8 lg:p-20">
@@ -1035,80 +1037,44 @@ const App: React.FC = () => {
         )}
 
         {step === AppStep.DASHBOARD && optimization && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 transition-all duration-700 relative">
-            
-            {/* Mobile Sidebar Backdrop */}
-            {sidebarOpen && (
-              <div 
-                className="lg:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[70] animate-in fade-in duration-300" 
-                onClick={() => setSidebarOpen(false)}
-              />
-            )}
+          <div className="relative">
+            {/* New Floating Refinement Chat */}
+            <RefinementChat 
+              currentCV={{
+                digitalSummary: optimization.digitalSync.linkedinSummary,
+                humanVersion: optimization.humanVersion
+              }}
+              onRefinementComplete={handleRefinementComplete}
+              userContext={{
+                targetRole: goals.targetRole,
+                targetIndustry: goals.industry
+              }}
+            />
 
-            {/* Sidebar Refactored for Mobile (Slide from left edge) */}
-            <aside className={`
-              ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20'} 
-              fixed lg:relative inset-y-0 left-0 z-[80] lg:z-10
-              lg:col-span-4 lg:translate-x-0 transition-transform duration-500 ease-in-out
-              w-[85%] sm:w-[400px] lg:w-auto h-full lg:h-auto
-              no-print
-            `}>
-              <div className="glass-panel rounded-r-[3.5rem] lg:rounded-[3.5rem] shadow-2xl p-8 lg:p-10 flex flex-col h-full lg:h-[850px] bg-white lg:bg-white/80 relative">
-                 <div className="lg:hidden absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-1.5 opacity-30">
-                    {[1, 2, 3].map(i => <div key={i} className="w-1 h-8 bg-slate-900 rounded-full" />)}
-                 </div>
-
-                 <div className="flex justify-between items-center mb-12">
-                    <div className="flex items-center gap-4">
-                      <VetaLogo className="p-1.5 w-10 h-10" />
-                      <h5 className="font-black text-slate-900 text-sm tracking-tight">Refinement</h5>
-                    </div>
-                    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-3 text-slate-300 hover:text-indigo-600 transition-all bg-white/40 rounded-2xl shadow-sm">
-                       <svg className={`h-6 w-6 transform transition-all duration-700 ${sidebarOpen ? 'rotate-0' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 19l-7-7 7-7" /></svg>
-                    </button>
-                 </div>
-                 
-                 {/* Undo/Redo Controls */}
-                 <div className="flex gap-2 mb-6">
-                    <button 
-                      onClick={handleUndo} 
-                      disabled={historyIndex <= 0}
-                      className="flex-1 py-3 px-4 bg-slate-100 rounded-xl text-xs font-bold text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-                      Undo
-                    </button>
-                    <button 
-                      onClick={handleRedo}
-                      disabled={historyIndex >= history.length - 1} 
-                      className="flex-1 py-3 px-4 bg-slate-100 rounded-xl text-xs font-bold text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
-                    >
-                      Redo
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" /></svg>
-                    </button>
-                 </div>
-
-                 <div className="flex-1 overflow-y-auto space-y-6 mb-10 pr-3 custom-scrollbar min-h-0">
-                    {chatMessages.map((m, i) => (
-                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-3`}>
-                         <div className={`max-w-[85%] p-5 rounded-[1.5rem] text-[11px] font-bold leading-relaxed ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none shadow-xl' : 'bg-white/70 text-slate-800 border border-white/40 rounded-bl-none shadow-sm'}`}>
-                            {m.content}
-                         </div>
-                      </div>
-                    ))}
-                    {isLoading && <div className="animate-pulse flex gap-2.5 p-4"><div className="w-2.5 h-2.5 bg-indigo-400 rounded-full"></div><div className="w-2.5 h-2.5 bg-indigo-400 rounded-full"></div><div className="w-2.5 h-2.5 bg-indigo-400 rounded-full"></div></div>}
-                 </div>
-                 <form onSubmit={(e) => { e.preventDefault(); const inp = (e.target as any).msg; if (inp.value.trim()) { handleChatSend(inp.value); inp.value=''; } }} className="relative group/input mt-auto">
-                    <input name="msg" autoComplete="off" disabled={isLoading} className="w-full p-6 pr-16 bg-white/60 border border-white/40 rounded-[2.5rem] outline-none text-xs font-black shadow-inner transition-all focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600" placeholder="Direct refinement..." />
-                    <button type="submit" disabled={isLoading} className="absolute right-2.5 top-2.5 bg-slate-900 text-white p-3.5 rounded-2xl shadow-xl hover:scale-105 active:scale-90 transition-all"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 10l7-7m-7-7v18" /></svg></button>
-                 </form>
-              </div>
-            </aside>
-
-            {/* Document Workspace */}
-            <div className={`${sidebarOpen ? 'lg:col-span-8' : 'lg:col-span-11'} flex-1 space-y-8 lg:space-y-12 transition-all duration-700`}>
+            {/* Document Workspace (Full Width now that sidebar is gone) */}
+            <div className="flex-1 space-y-8 lg:space-y-12 transition-all duration-700 max-w-[1400px] mx-auto">
                <div className="glass-panel rounded-[4rem] shadow-elite min-h-[900px] flex flex-col border border-white/40 overflow-hidden">
-                  <nav className="flex bg-white/30 border-b no-print overflow-x-auto custom-scrollbar">
+                  <nav className="flex bg-white/30 border-b no-print overflow-x-auto custom-scrollbar relative">
+                     <div className="hidden lg:flex items-center px-6 border-r border-white/20">
+                       <div className="flex gap-2">
+                          <button 
+                            onClick={handleUndo} 
+                            disabled={historyIndex <= 0}
+                            className="p-2 bg-white/50 rounded-xl hover:bg-white text-slate-600 disabled:opacity-30 transition-all"
+                            title="Undo"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                          </button>
+                          <button 
+                            onClick={handleRedo}
+                            disabled={historyIndex >= history.length - 1} 
+                            className="p-2 bg-white/50 rounded-xl hover:bg-white text-slate-600 disabled:opacity-30 transition-all"
+                            title="Redo"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" /></svg>
+                          </button>
+                       </div>
+                     </div>
                      {[
                         { id: 'ats', label: 'ATS Vetting' },
                         { id: 'human', label: 'Elite Archive' },
@@ -1126,6 +1092,7 @@ const App: React.FC = () => {
 
                   <div className="flex-1 p-6 lg:p-14 overflow-y-auto max-h-[1400px] custom-scrollbar bg-white/10">
                      {activeTab === 'ats' && (
+                       // ... existing ATS content ...
                        <div className="animate-in fade-in slide-in-from-right-6 duration-500">
                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-12">
                              <h4 className="text-3xl font-black italic tracking-tight">ATS Scaled Payload</h4>
@@ -1263,7 +1230,7 @@ const App: React.FC = () => {
                                <img src={optimization.brandingImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[3s]" alt="VetaCV Branding" />
                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-14">
                                   <a href={optimization.brandingImage} download="VetaCV_Identifier.png" className="bg-white text-slate-900 font-black px-12 py-5 rounded-[2rem] shadow-2xl hover:bg-slate-50 transition-colors text-xs self-end">Export High-Res Identifier</a>
-                               </div>
+                                </div>
                             </div>
                           ) : (
                             <div className="aspect-video bg-white/30 rounded-[5rem] border-4 border-dashed border-white/40 flex flex-col items-center justify-center p-20 animate-in fade-in duration-1000">

@@ -161,6 +161,7 @@ export const sanitizeHtmlForPdf = (rawHtml: string): SanitizationResult => {
       margin-bottom: 10px;
       padding-bottom: 5px;
       border-bottom: 1px solid #eee;
+      page-break-after: avoid;
     }
     
     h2 {
@@ -170,6 +171,8 @@ export const sanitizeHtmlForPdf = (rawHtml: string): SanitizationResult => {
       color: #2c3e50;
       border-bottom: 1px solid #e2e8f0;
       padding-bottom: 5px;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     
     h3 {
@@ -178,12 +181,16 @@ export const sanitizeHtmlForPdf = (rawHtml: string): SanitizationResult => {
       margin-bottom: 8px;
       color: #34495e;
       font-weight: bold;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     
     p {
       margin-top: 8px;
       margin-bottom: 12px;
       text-align: justify;
+      orphans: 3; 
+      widows: 3;
     }
     
     ul, ol {
@@ -195,6 +202,7 @@ export const sanitizeHtmlForPdf = (rawHtml: string): SanitizationResult => {
     li {
       margin-bottom: 6px;
       page-break-inside: avoid;
+      break-inside: avoid;
     }
     
     /* Page break control */
@@ -202,13 +210,19 @@ export const sanitizeHtmlForPdf = (rawHtml: string): SanitizationResult => {
       page-break-before: always;
     }
     
+    .keep-together {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
     @media print {
       body { margin: 0; padding: 0; }
       #veta-pdf-container { padding: 15mm; }
       
       /* Prevent breaking inside key elements */
-      h1, h2, h3, h4 { page-break-after: avoid; }
-      ul, ol, p, li { page-break-inside: avoid; }
+      h1, h2, h3, h4 { page-break-after: avoid; break-after: avoid; }
+      ul, ol, li { page-break-inside: avoid; break-inside: avoid; }
+      p { page-break-inside: auto; }
       
       /* Force footer to bottom */
       .veta-footer {

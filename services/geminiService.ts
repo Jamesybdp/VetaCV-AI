@@ -190,6 +190,26 @@ export class GeminiService {
     return result.text || "VetaCV Node offline.";
   }
 
+  async refineWithPrompt(prompt: string): Promise<string> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          responseMimeType: "application/json",
+        },
+      });
+      return response.text || "{}";
+    } catch (error: any) {
+      console.error('Gemini refinement error:', error);
+      throw new Error(`Refinement failed: ${error.message}`);
+    }
+  }
+
   async generateCoverLetter(cv: string, jobDescription: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `
