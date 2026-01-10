@@ -133,6 +133,11 @@
             body { background: white !important; padding: 0 !important; }
             .paper-canvas { box-shadow: none !important; margin: 0 !important; width: 100% !important; max-width: 100% !important; padding: 0 !important; }
             .veta-badge { display: flex !important; }
+            
+            /* Enhanced Page Break Controls */
+            h1, h2, h3, h4 { page-break-after: avoid; }
+            ul, ol, li, p, .experience-item, .education-block { page-break-inside: avoid; }
+            section { page-break-inside: avoid; page-break-before: auto; }
         }
     </style>
 <script type="importmap">

@@ -8,16 +8,16 @@ export enum AppStep {
 }
 
 export interface CareerGoals {
-  targetRole: string; // Still used for internal logic and naming
-  industry: string; // Now used for Industry Preferences
-  locationPreference?: string; // New field for location
+  targetRole: string;
+  industry: string;
+  locationPreference?: string;
   moveType: 'vertical' | 'lateral' | 'pivot';
-  jobDescription: string; // Now a primary input
+  jobDescription: string;
   jobLink?: string;
   topRequirements?: string[];
   uniqueValue?: string;
   developingSkills?: string;
-  recipientContext?: string; // Target Company
+  recipientContext?: string;
 }
 
 export interface OptimizationResult {
@@ -30,11 +30,18 @@ export interface OptimizationResult {
     linkedinSummary: string;
     suggestedSkills: string[];
     portfolioPrompts: string[];
+    brandingPrompts: string[]; // 3 specific prompts for portfolio focus or interview responses
   };
   analysis: {
     keywordImpact: string;
     narrativeAlignment: string;
     atsCompatibility: string;
+  };
+  // New Features
+  coverLetter?: string;
+  interviewPrep?: {
+    questions: { question: string; strategy: string }[];
+    tips: string[];
   };
 }
 
@@ -42,4 +49,13 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+}
+
+export interface JobApplication {
+  id: string;
+  company: string;
+  role: string;
+  status: 'Saved' | 'Applied' | 'Interviewing' | 'Offer' | 'Rejected';
+  dateApplied: string;
+  notes?: string;
 }
