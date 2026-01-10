@@ -1404,7 +1404,6 @@ const App: React.FC = () => {
             </div>
             <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.8em] mb-16">Sculpting One-Page Excellence</p>
             <div className="flex flex-wrap justify-center items-center gap-12 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] opacity-80">
-               <span className="hover:text-indigo-600 transition-colors">Harare Node: ONLINE</span>
                <span>&copy; {new Date().getFullYear()} VetaCV AI™</span>
                <a href="https://ybdpsystems.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-700 transition-all border-b border-indigo-200 hover:border-indigo-600 pb-0.5">Developed by YBDP Systems</a>
                <button onClick={() => setShowToS(true)} className="hover:text-indigo-600 transition-colors border-b border-transparent hover:border-indigo-600 pb-0.5">Vetting Protocol v3.1</button>
