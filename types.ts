@@ -4,7 +4,8 @@ export enum AppStep {
   UPLOAD_CV = 'UPLOAD_CV',
   TARGET_ROLE = 'TARGET_ROLE',
   ANALYZING = 'ANALYZING',
-  DASHBOARD = 'DASHBOARD'
+  DASHBOARD = 'DASHBOARD',
+  PROFILE = 'PROFILE'
 }
 
 export interface CareerGoals {
@@ -53,9 +54,53 @@ export interface ChatMessage {
 
 export interface JobApplication {
   id: string;
+  userId?: string; // Prepared for backend
   company: string;
   role: string;
   status: 'Saved' | 'Applied' | 'Interviewing' | 'Offer' | 'Rejected';
   dateApplied: string;
   notes?: string;
+}
+
+export interface Transaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: number; // Positive for purchase, negative for usage
+  type: 'purchase' | 'usage' | 'bonus';
+}
+
+export interface SavedCV {
+  id: string;
+  userId: string;
+  dateCreated: string;
+  targetRole: string;
+  previewText: string;
+  data: OptimizationResult;
+  goals: CareerGoals;
+}
+
+export interface UserProfile {
+  id: string; // UUID
+  isAnonymous: boolean;
+  name: string;
+  email: string;
+  tokens: number;
+  plan: 'Free' | 'Starter' | 'Standard' | 'Pro' | 'Unlimited';
+  autoApplyCredits: {
+    used: number;
+    total: number;
+  };
+  transactions: Transaction[];
+  savedCVs: SavedCV[];
+}
+
+export interface PricingPlan {
+  id: string;
+  name: string;
+  credits: number | '∞';
+  price: number;
+  tag?: string;
+  color: string;
+  features: string[];
 }
